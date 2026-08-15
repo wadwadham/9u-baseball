@@ -83,6 +83,16 @@
   textarea{width:100%;height:90px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;
     background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:8px}
   .hidden{display:none}
+  /* bracket view */
+  .bwrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 8px}
+  .bk-col{font-size:10px;fill:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+  .bk-gid{font-size:9px;fill:var(--faint);letter-spacing:.05em}
+  .bk-name{font-size:11px;fill:var(--ink)}
+  .bk-tbd{font-size:11px;fill:var(--faint);font-style:italic}
+  .bk-win{font-weight:700;fill:var(--green)}
+  .bk-lose{fill:var(--faint);text-decoration:line-through}
+  .bk-mine{fill:var(--mine);font-weight:700}
+  .bk-champ-name{font-size:12px;font-weight:700;fill:var(--red)}
   /* Phones: fat tap targets, 16px inputs so iOS doesn't zoom on focus */
   @media (max-width:640px){
     .wrap{padding:14px 11px 50px}
@@ -180,6 +190,15 @@
       </div>
     </aside>
   </div>
+
+  <section style="margin-top:20px">
+    <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:0 0 8px">
+      Bracket view
+      <span style="color:var(--faint);text-transform:none;letter-spacing:0;font-weight:400">
+        — fills in as results land · solid lines are locked, dashed still to be decided · swipe sideways on a phone</span>
+    </h2>
+    <div class="bwrap" id="bwrap"></div>
+  </section>
 </div>
 
 <script>
@@ -379,7 +398,7 @@ function render(){
     sec.appendChild(grid); main.appendChild(sec);
   });
 
-  drawStandings(); drawNext(); drawExplain();
+  drawStandings(); drawNext(); drawExplain(); drawBracket();
   el("iotext").value = JSON.stringify(S);
   syncUrl();
 }
@@ -487,6 +506,137 @@ function drawExplain(){
   exactly one of them unbeaten.<br><br>
   The final is deliberately open-ended: if the unbeaten team wins G16, it's over. If it loses, everyone
   has one loss and G17 settles it.`;
+}
+
+/* ---------------- bracket view (SVG) ---------------- */
+function drawBracket(){
+  const BW=150, BH=46, GX=48, TOP=28, H=396;
+  const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const showByeVI = bracket()!=="A";
+  const cols=[
+    {t:"Round I · Fri",   items:["G1","G2","G3","G4","BYE-I"]},
+    {t:"Round II · Fri",  items:["G5","G6","G7","G8","BYE-II"]},
+    {t:"Round III · Sat", items:["G9","G10","G11","BYE-III"]},
+    {t:"Round IV · Sat",  items:["G13","G12","BYE-IV"]},
+    {t:"Final four · Sun",items:["G14","G15"]},
+    {t:"Round VI · Sun",  items: showByeVI?["G16","BYE-VI"]:["G16"]},
+    {t:"Title · Sun",     items:["G17","CHAMP"]}
+  ];
+  const pos={}; let head="", boxes="", lines="";
+  cols.forEach((c,ci)=>{
+    const x=8+ci*(BW+GX);
+    head+=`<text class="bk-col" x="${x}" y="14">${esc(c.t)}</text>`;
+    const n=c.items.length;
+    c.items.forEach((id,i)=>{
+      const y = n===1 ? TOP+(H-TOP-BH)/2 : TOP+i*((H-TOP-BH-6)/(n-1));
+      pos[id]={x,y};
+    });
+  });
+
+  const byeTeam=id=> id==="BYE-I"?"mgrey" : id==="BYE-II"?W(1) : id==="BYE-III"?r3Bye()
+                   : id==="BYE-IV"?W(9) : id==="BYE-VI"?S.r6.bye : "";
+  const byePH={"BYE-I":"","BYE-II":"Winner G1","BYE-III":"W2 or W8","BYE-IV":"Winner G9","BYE-VI":"Drawn bye"};
+
+  for(const id in pos){
+    const {x,y}=pos[id];
+    if(id==="CHAMP"){
+      const c=champion();
+      boxes+=`<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="7" fill="rgba(212,56,47,.12)" stroke="var(--red)"/>`
+        +`<text class="bk-gid" x="${x+8}" y="${y+16}">CHAMPION</text>`
+        +`<text class="${c?'bk-champ-name':'bk-tbd'}" x="${x+8}" y="${y+34}">${esc(c?TEAMS[c]:"To be decided")}</text>`;
+      continue;
+    }
+    if(id.indexOf("BYE")===0){
+      const k=byeTeam(id);
+      boxes+=`<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="7" fill="none" stroke="var(--line)" stroke-dasharray="4 3"/>`
+        +`<text class="bk-gid" x="${x+8}" y="${y+16}">BYE</text>`
+        +`<text class="${k?(k===S.my?'bk-name bk-mine':'bk-name'):'bk-tbd'}" x="${x+8}" y="${y+34}">${esc(k?TEAMS[k]:(byePH[id]||"TBD"))}</text>`;
+      continue;
+    }
+    const n=+id.slice(1), p=pair(n), r=S.res[id]||{}, ph=PLACEHOLDER[n]||["",""];
+    boxes+=`<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="7" fill="var(--panel2)" stroke="${r.w?'var(--green)':'var(--line)'}"/>`
+      +`<line x1="${x}" y1="${y+BH/2}" x2="${x+BW}" y2="${y+BH/2}" stroke="var(--line)"/>`
+      +`<text class="bk-gid" x="${x}" y="${y-4}">${id}${n===17?" · if needed":""}</text>`;
+    p.forEach((k,i)=>{
+      const ty=y+(i?38:18);
+      let cls = k ? "bk-name" : "bk-tbd";
+      if(k&&r.w) cls += (r.w===(i?"b":"a")) ? " bk-win" : " bk-lose";
+      if(k===S.my) cls += " bk-mine";
+      const sc = k && r[i?"b":"a"]!=null && r[i?"b":"a"]!=="" ? " "+r[i?"b":"a"] : "";
+      boxes+=`<text class="${cls}" x="${x+8}" y="${ty}">${esc((k?TEAMS[k]:ph[i])+sc)}</text>`;
+    });
+  }
+
+  // edges: f=source node, k=what leaves it (W/L/B=bye/?=unknown), t=destination, s=slot (0 top, 1 bottom, -1 middle)
+  const E=[
+    {f:"G1",k:"L",t:"G5",s:0},{f:"G2",k:"L",t:"G5",s:1},
+    {f:"G3",k:"L",t:"G6",s:0},{f:"G4",k:"L",t:"G6",s:1},
+    {f:"BYE-I",k:"B",t:"G7",s:0},{f:"G2",k:"W",t:"G7",s:1},
+    {f:"G3",k:"W",t:"G8",s:0},{f:"G4",k:"W",t:"G8",s:1},
+    {f:"G1",k:"W",t:"BYE-II",s:-1},
+    {f:"G5",k:"W",t:"G9",s:0},{f:"G6",k:"W",t:"G9",s:1},
+    {f:"G7",k:"L",t:"G10",s:0},{f:"G8",k:"L",t:"G10",s:1},
+    {f:"BYE-II",k:"B",t:"G11",s:0},
+    {f:"G10",k:"W",t:"G12",s:0},{f:"G11",k:"L",t:"G12",s:1},
+    {f:"G11",k:"W",t:"G13",s:0},{f:"BYE-III",k:"B",t:"G13",s:1},
+    {f:"G9",k:"W",t:"BYE-IV",s:-1}
+  ];
+  const w2=W(2), w7=W(7);
+  if(w7 && w2){
+    if(w7===w2) E.push({f:"G8",k:"W",t:"G11",s:1},{f:"G7",k:"W",t:"BYE-III",s:-1});
+    else        E.push({f:"G7",k:"W",t:"G11",s:1},{f:"G8",k:"W",t:"BYE-III",s:-1});
+  } else {
+    E.push({f:"G7",k:"?",t:"G11",s:1},{f:"G8",k:"?",t:"BYE-III",s:-1});
+  }
+  const srcOf=k=>{ if(!k) return null;
+    if(k===W(9))  return {f:"BYE-IV",k:"B"};
+    if(k===W(12)) return {f:"G12",k:"W"};
+    if(k===W(13)) return {f:"G13",k:"W"};
+    if(k===L(13)) return {f:"G13",k:"L"};
+    return null; };
+  [14,15].forEach(n=> pair(n).forEach((k,s)=>{ const sp=srcOf(k); if(sp) E.push({f:sp.f,k:sp.k,t:"G"+n,s}); }));
+  if(bracket()==="A"){
+    E.push({f:"G14",k:"W",t:"G16",s:0},{f:"G15",k:"W",t:"G16",s:1});
+  } else if(bracket()==="B"){
+    const g16src=k=>{ if(!k) return null;
+      const g = pair(14).includes(k)?14 : pair(15).includes(k)?15 : null;
+      return g ? {f:"G"+g, k:(W(g)===k?"W":"L")} : null; };
+    pair(16).forEach((k,s)=>{ const sp=g16src(k); if(sp) E.push({f:sp.f,k:sp.k,t:"G16",s}); });
+    const sb=g16src(S.r6.bye); if(sb) E.push({f:sb.f,k:sb.k,t:"BYE-VI",s:-1});
+    E.push({f:"BYE-VI",k:"B",t:"G17",s:1});
+  } else {
+    E.push({f:"G14",k:"?",t:"G16",s:0},{f:"G15",k:"?",t:"G16",s:1});
+  }
+  E.push({f:"G16",k:"W",t:"G17",s:0});
+  if(bracket()!=="B") E.push({f:"G16",k:bracket()==="A"?"L":"?",t:"G17",s:1});
+  E.push( champion() ? {f:(W(17)?"G17":"G16"),k:"W",t:"CHAMP",s:-1} : {f:"G17",k:"?",t:"CHAMP",s:-1} );
+
+  const outY=(id,k)=>{
+    const q=pos[id]; if(!q) return null;
+    if(id.indexOf("BYE")===0) return q.y+BH/2;
+    const r=S.res[id];
+    if((k==="W"||k==="L") && r && r.w){
+      const winTop = r.w==="a";
+      return q.y + (((k==="W")===winTop) ? 12 : 34);
+    }
+    return q.y+BH/2;
+  };
+  const inY=(id,s)=>{ const q=pos[id]; return !q?null : s===0?q.y+12 : s===1?q.y+34 : q.y+BH/2; };
+
+  E.forEach(e=>{
+    const a=pos[e.f], b=pos[e.t]; if(!a||!b) return;
+    let mover="";
+    if(e.f.indexOf("BYE")===0||e.k==="B") mover=byeTeam(e.f.indexOf("BYE")===0?e.f:"");
+    else if(e.k==="W") mover=W(+e.f.slice(1));
+    else if(e.k==="L") mover=L(+e.f.slice(1));
+    const x1=a.x+BW, x2=b.x, y1=outY(e.f,e.k), y2=inY(e.t,e.s), mx=x1+GX/2;
+    const mine = mover && mover===S.my;
+    const dash = (!mover||e.k==="?") ? ' stroke-dasharray="4 4" opacity="0.5"' : '';
+    lines+=`<path d="M${x1} ${y1} L${mx} ${y1} L${mx} ${y2} L${x2} ${y2}" fill="none" stroke="${mine?'var(--mine)':'var(--line)'}" stroke-width="${mine?2:1.5}"${dash}/>`;
+  });
+
+  const Wt=8+cols.length*(BW+GX);
+  el("bwrap").innerHTML=`<svg width="${Wt}" height="${H+8}" viewBox="0 0 ${Wt} ${H+8}" role="img" aria-label="Tournament bracket diagram">${head}${lines}${boxes}</svg>`;
 }
 
 /* ---------------- interaction ---------------- */
